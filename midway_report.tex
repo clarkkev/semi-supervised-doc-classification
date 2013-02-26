@@ -48,21 +48,21 @@ Address \\
 \maketitle
 
 \begin{abstract}
-This paper demonstrates how a text classifier can leverage a pool of unlableed documents in addition 
-to enchance classifier performance. Our technique uses Expectation-Maximization (EM) alongside a generative
-classifier. The classifier is traiined on the labelled date and used to generated probabilistic labels for the unlabeled
-data. The classifier is then triained using all the documents and regenerates label estimates for the unlabeled data.
-This is repeated until convergance. We also demonsrate how weighting the labeled samples more heavily 
-can additionally improve the efficeventess of this technique. Our results show that when labeled data is scarse
+This paper demonstrates how a text classifier can leverage a pool of unlabeled documents 
+to enhance classification performance. Our technique uses Expectation-Maximization (EM) alongside a generative
+classifier. The classifier is trained on the labelled date and used to generated probabilistic labels for the unlabeled
+data. The classifier is then trained using all the documents and regenerates label estimates for the unlabeled data.
+This is repeated until convergence. We also demonstrate how weighting the labeled samples more heavily 
+can additionally improve the effectiveness of this technique. Our results show that when labeled data is scarce
 this technique can decrease classifier accuracy by up to 30%. 
 \end{abstract}
 
 \section{Introduction}
 Our paper will focus on text classification, although there is nothing preventing the techniques discussed here to 
-generalize to other domains. Textual data is often abundant in places like digital records, eletroncic archives, 
-and company databses but labeleling that data often must be done by hand. This can make training many
-conventail algorithms overly expansive as labeling sufficent data for 
-these classifiers to achive high accuracy is too costly. 
+generalize to other domains. Textual data is often abundant in places like digital records, electronic archives, 
+and company databases but labeling that data often must be done by hand. This can make training many
+conventional algorithms overly expansive as labeling sufficient data for 
+these classifiers to achieve high accuracy is too costly. 
 
 \section{Naive Bayes}
 The generative model we used was a Multinomial Naive Bayes classifier (MNB). This classifier 
@@ -97,5 +97,12 @@ where k is a smoothing parameter.
 \section{Expectation Maximization}
 
 \section{Results}
+
+\section{Further Work}
+In order to maintain 
+We also plan on using the same EM process with different probabilistic classifiers. A maximum entropy classifier, for example, may be able to produce more accurate results since it can make use of features beyond word counts in a clean way. 
+
+In order to scale up to larger datasets, it is beneficial to apply dimensionality reduction techniques to produce more compact representations and smaller models. This will be especially important for a more sophisticated classifier than Naive Bayes, which could take longer to train.
+ 
 
 \end{document}
