@@ -1,0 +1,101 @@
+\documentclass{article} % For LaTeX2e
+\usepackage{nips12submit_e,times}
+%\documentstyle[nips12submit_09,times,art10]{article} % For LaTeX 2.09
+
+
+\title{Semi-Supervised Document Classification with EM and Naive Bayes}
+
+
+\author{
+/David S.~Hippocampus\thanks{ Use footnote for providing further information
+about author (webpage, alternative address)---\emph{not} for acknowledging
+funding agencies.} \\
+Department of Computer Science\\
+Cranberry-Lemon University\\
+Pittsburgh, PA 15213 \\
+\texttt{hippo@cs.cranberry-lemon.edu} \\
+\and
+Coauthor \\
+Affiliation \\
+Address \\
+\texttt{email} \\
+\AND
+Coauthor \\
+Affiliation \\
+Address \\
+\texttt{email} \\
+\And
+Coauthor \\
+Affiliation \\
+Address \\
+\texttt{email} \\
+\And
+Coauthor \\
+Affiliation \\
+Address \\
+\texttt{email} \\
+(if needed)\\
+}
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+%\nipsfinalcopy % Uncomment for camera-ready version
+
+\begin{document}
+
+
+\maketitle
+
+\begin{abstract}
+This paper demonstrates how a text classifier can leverage a pool of unlableed documents in addition 
+to enchance classifier performance. Our technique uses Expectation-Maximization (EM) alongside a generative
+classifier. The classifier is traiined on the labelled date and used to generated probabilistic labels for the unlabeled
+data. The classifier is then triained using all the documents and regenerates label estimates for the unlabeled data.
+This is repeated until convergance. We also demonsrate how weighting the labeled samples more heavily 
+can additionally improve the efficeventess of this technique. Our results show that when labeled data is scarse
+this technique can decrease classifier accuracy by up to 30%. 
+\end{abstract}
+
+\section{Introduction}
+Our paper will focus on text classification, although there is nothing preventing the techniques discussed here to 
+generalize to other domains. Textual data is often abundant in places like digital records, eletroncic archives, 
+and company databses but labeleling that data often must be done by hand. This can make training many
+conventail algorithms overly expansive as labeling sufficent data for 
+these classifiers to achive high accuracy is too costly. 
+
+\section{Naive Bayes}
+The generative model we used was a Multinomial Naive Bayes classifier (MNB). This classifier 
+maintains a multinomail distrubution for each class along with a set of priors for each class. New
+examples are classified by assigning the examples the class corresponding to the multinomial distribution that would
+yield the highest likelihood for that examples. 
+\subsection{Data representation}
+For the purposes of classification we represent each document as a bag-of-words. Thus for some vocabulary $V$ consisting of
+a set of words $V = \langle{w_1,w_2...w_{|V|}}\rangle$ we represent a document $d_i$ as a
+a vector of words count $d_i = \langle{w_{i,1},w_{i,2}...w_{i,|V|}}\rangle$ where $w_{i,n}$ represents
+the number of times word $w_n$ appears in document  $d_i$.
+ 
+We also have a list of potential classes for each document $Y = {y_1,y_2,...y_{|C|}}$ and a list of labels for each document
+$Y =  {c_{i,1},c_{i,2},...c_{i,|D|}}$ where $c_{i,n}$ represents the fact document $d_i$ is of class $c_n$
+
+\subsection{Traiing the classifier}
+Let $\Theta$ correspond to the parameters of our MNB model. Let $\Theta_{w_t,c_j} = (P(w_t|y_j;\Theta)$ thus $\Theta_{w_t,c_j}$
+represents the pobability $w_t$ appears in the multinomial distrubtion corresponding to class $c_j$.  a MNB model also includes
+a set of priors for each class written $\Theta_{y_j}$. 
+Training a MNB consists of estimating the parameters to $\Theta$ given a list of documents and list of labels.
+
+Let $NumOfDoc(y_j) = \sum_{n=1}^{|D|}I(y_j = c_i)$ where $I$ is the indicator function
+
+We estimate $\Theta$ by:
+ \[\Theta_{y_j}= {NumOfDocs(y_j)\over{\sum_{n=1}^{|Y|}NumOfDocs(y_n)}}\]
+and 
+\[\Theta_{w_t,y_j} = {k + sum_{i=1}^{|D|} I(c_i = y_j)w_{i,j}\over{|V| * k + \sum_{n=1}^{|D|}I(c_i = y_j)\sum_{v=1}^{|v|}w_{i,v}}}\]
+where k is a smoothing parameter.
+\subsection{Parameter optimization}
+
+
+\section{Expectation Maximization}
+
+\section{Results}
+
+\end{document}
