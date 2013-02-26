@@ -60,13 +60,8 @@ def alpha_search(vectorizer):
   alpha = 0.0
   best_score = -1
   best_alpha = None
-  while(alpha < 10):
-    if(alpha < 1):
-      alpha += 0.02
-    elif alpha < 5:
-      alpha += 0.5
-    else:
-      alpha += 1
+  while(alpha < 5):
+    alpha += 0.5
     nb.set_params(alpha = alpha)
     nb.fit(X_train, y_train)
     score = nb.score(X_test, y_test)
@@ -79,8 +74,10 @@ def alpha_search(vectorizer):
   print("Best score: " + str(best_score))
 
 def find_best_alpha():
-  vectorizer = TfidfVectorizer(lowercase=True,sublinear_tf=True,
-                               stop_words='english',max_df=.9,min_df=2)
+#  vectorizer = TfidfVectorizer(lowercase=True,sublinear_tf=True,
+#                               stop_words='english',max_df=.9,min_df=2)
+  vectorizer = CountVectorizer(lowercase=True,stop_words='english',max_df=.5,min_df=2)
+
   alpha_search(vectorizer)
 
 def run_tests():
