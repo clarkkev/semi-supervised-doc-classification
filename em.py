@@ -1,256 +1,149 @@
-from time import time
-
-from loader import DataGatherer
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.feature_selection import SelectKBest, chi2
-from sklearn.linear_model import RidgeClassifier
-from sklearn.svm import LinearSVC
-from sklearn.linear_model import SGDClassifier
-from sklearn.linear_model import Perceptron
-from sklearn.linear_model import PassiveAggressiveClassifier
-from sklearn.naive_bayes import BernoulliNB, MultinomialNB
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neighbors import NearestCentroid
-from sklearn.utils.extmath import density
+from sklearn.naive_bayes import MultinomialNB
 from sklearn import metrics
-import itertools
 
+from scipy import sparse
 import numpy as np
-from scipy.sparse import *
 
-import math
-from util import subset, subsets
+import loader
+import util
 
-def sparse_diagonal(v, n):
-  return coo_matrix(([v] * n, (range(n), range(n))))  
-
-def get_word_probs(clf, X_train):
-  #print X_train.shape
-  #print sparse_diagonal(1, X_train.shape[1]).shape
-  return clf.predict_proba(sparse_diagonal(1, X_train.shape[1]))
-
-def em(clf, vectorizor, unlabeled, labeled, test, y_labeled, y_test, mode="hard"):
-  print mode
-  #print sparse_diagonal(1, 4).todense()
-  
-  print "Transforming data..."
-  X_train = vectorizor.fit_transform(labeled + unlabeled)
+def em(clf, vectorizor, unlabeled, labeled, test, y_labeled, y_test,
+       iterations=10, labeled_weight=2, mode="hard"):
+  print "Running semi-supervised EM, mode = " + mode
+  print "Building word counts..."
+  vectorizor.fit(labeled + unlabeled)
   X_labeled = vectorizor.transform(labeled)
+  X_unlabeled = vectorizor.transform(unlabeled)
+  X_train = sparse.vstack([X_labeled, X_unlabeled])
   X_test = vectorizor.transform(test)
+  num_classes = max(max(y_test), max(y_labeled))
 
-  #for i in range(len(X_train.data)):
-  #  print X_train.data[i]
-  #print "SHAPE: ", X_train.shape[1]
-   
+  if mode == 'SFE':
+    print "Computing p(c|w) for each word..."
+    total_word_counts = np.zeros(X_labeled.shape[1])
+    class_given_word = np.zeros((20, X_labeled.shape[1]))
+    labeled_csr = X_labeled.tocsr()
+    for i, y in enumerate(y_labeled):
+      row = np.asarray(labeled_csr.getrow(i).todense())[0]
+      total_word_counts += row
+      class_given_word[y] += row
+    class_word_counts = np.copy(class_given_word)
 
-  ws = ([2] * len(labeled)) + ([1] * len(unlabeled))
+    smoothing = 0.001
+    total_word_counts = np.maximum(total_word_counts, 1)
+    for c in range(num_classes):
+      class_given_word[c] = (class_given_word[c] + smoothing) \
+        / (total_word_counts + (num_classes + 1) * smoothing)
 
-  clf2 = MultinomialNB(alpha=0.01)
-  if mode=='SFE':
-    initial = benchmark(clf2, X_labeled, X_test, y_labeled, y_test)
-  initial = benchmark(clf, X_labeled, X_test, y_labeled, y_test)
- 
-  final = 0
-  for iteration in range(1):
-    if mode=='hard':
-      pred = clf.predict(X_train)
-      clf.fit(X_train, pred, ws)
-      final = evaluate(clf, X_test, y_test)
-      print final
+  clf2 = MultinomialNB(alpha=0.0001)
 
-    elif mode=='soft':
-      # E-step
-      prob = clf.predict_proba(X_train)
-      classes = prob.shape[1]
+  print "Initializing with supervised prediction..."
+  clf.fit(X_labeled, y_labeled)
+  clf2.fit(X_labeled, y_labeled)
+  supervised_accuracy = get_accuracy(clf, X_test, y_test)
+  print "Supervised accuracy: {:.2%}".format(supervised_accuracy)
 
-      # M-step
-      ys, ws_new = [], []
-      for c in range(classes):
-        for i in range(prob.shape[0]):
+  # TODO: stopping criteria based on log-likelihood convergence
+  for iteration in range(iterations):
+    print "On iteration: " + str(iteration + 1) + " out of " + str(iterations)
+    if mode == 'hard':
+      ws = ([labeled_weight] * len(labeled)) + ([1] * len(unlabeled))
+      predictions = clf.predict(X_unlabeled)
+      clf.fit(X_train, np.append(y_labeled, predictions), ws)
+
+    elif mode == 'soft':
+      probas = clf.predict_proba(X_unlabeled)
+
+      Xs = sparse.vstack([X_labeled] + ([X_unlabeled] * num_classes))
+      ys = y_labeled[:]
+      ws = [int(labeled_weight * 10000)] * len(y_labeled)
+      for c in range(num_classes):
+        for i in range(probas.shape[0]):
           ys.append(c)
-          if prob[i, c] == 0:
-            ws_new.append(0)
-          else:
-            #ws_new.append(ws[i] * int(1e12 / (2 - math.log(prob[i, c]))))
-            ws_new.append(ws[i] * int(1e12 * prob[i, c]))
-      Xs = vstack([X_train] * classes)
-      print "Training"
-      clf.fit(Xs, ys, ws_new)
-      final = evaluate(clf, X_test, y_test)
-      print final
-    
-    elif mode=='SFE':
-      print "Computing word probs..."
-      prob = clf.predict_proba(X_train)
-      probs = get_word_probs(clf2, X_train)
-      classes = probs.shape[1]
+          ws.append(int(10000 * probas[i, c]))
+      clf.fit(Xs, ys, ws)
 
-      ys, ws_new = [], []
-      for c in range(classes):
-        for i in range(X_train.shape[0]):
-          ys.append(c)
-          if prob[i, c] == 0:
-            ws_new.append(0)
-          else:
-            #ws_new.append(ws[i] * int(1e12 / (2 - math.log(prob[i, c]))))
-            ws_new.append(ws[i] * int(1000 * prob[i, c]))
- 
-      stacks = []     
-      for c in range(classes):
-        #aprint "Building for class ", c
-        word_probs = probs[:,c]
-        #for i in range(len(word_probs)):
-        #  print word_probs[i] * 20
-        
-        prob_matrix = diags([word_probs], [0])
-        #prob_matrix = diags([[1] * X_train.shape[1]], [0])
-        #for i in range(prob.shape[0]):
-        
-        #print X_train.shape, prob_matrix.shape
-        
-        stacks.append((X_train * prob_matrix).tocoo())
-        #print X_train.shape
-        #print prob_matrix.shape
-        #stacks.append(X_train)
+    elif mode == 'SFE':
+      num_words = X_train.shape[1]
+      word_matrix = sparse.coo_matrix(([1] * num_words,
+       (range(num_words), range(num_words))))
       
-      Xs = vstack(stacks)
-      #Xs = vstack([X_train] * classes)
-      print "Training"
-      clf.fit(Xs, ys)
-      clf2.fit(Xs, ys, ws_new)
-      final = evaluate(clf, X_test, y_test)
-      print final
+      probas = clf2.predict_proba(word_matrix)
+      probas *= num_classes
 
-      '''print "Computing word probs..."
-      #probs = clf.predict_proba(X_train)
-      probs = get_word_probs(clf, X_train)
-      classes = probs.shape[1]
+      X_matrices = [X_labeled]
+      for c in range(num_classes):
+        word_probas_2 = probas[:,c]
+        word_probas = class_given_word[c]
 
-      ys, ws_new = [], []
-      for c in range(classes):
-        for i in range(probs.shape[0]):
-          ys.append(c)
-          #if probs[i, c] == 0:
-          #  ws_new.append(0)
-          #else:
-            #ws_new.append(ws[i] * int(1e12 / (2 - math.log(prob[i, c]))))
-          #  ws_new.append(ws[i] * int(1e12 * probs[i, c]))
- 
-      stacks = []     
-      for c in range(classes):
-        print "Building for class ", c
-        word_probs = probs[:,c] 
-        prob_matrix = diags([word_probs], [0])
-        prob_matrix = diags([[1] * X_train.shape[0]], [0])
-        #for i in range(prob.shape[0]):
-        #stacks.append((X_train * prob_matrix).tocoo())
-        print X_train.shape
-        print prob_matrix.shape
-        stacks.append(X_train)
+        #for i in range(len(word_probas)):
+        #  print word_probas[i], word_probas_2[i]
+        #  print total_word_counts[i], class_word_counts[c][i]
+        #  print
+        #return
+
+        if iteration == 0:
+          X_matrices.append((X_unlabeled * \
+            sparse.diags([[1.0/20] * num_words], [0])).tocoo())
+            #sparse.diags([word_probas], [0])).tocoo())
+        else:
+          X_matrices.append((X_unlabeled * \
+            sparse.diags([word_probas_2], [0])).tocoo())
       
-      #Xs = vstack(stacks)
-      Xs = vstack([X_train] * classes)
-      print "Training"
-      clf.fit(Xs, ys)
-      final = evaluate(clf, X_test, y_test)
-      print final'''
+      Xs = sparse.vstack(X_matrices)
+      ys = y_labeled + (range(num_classes) * X_unlabeled.shape[0])
+      #ws = ([num_classes * labeled_weight] * len(y_labeled)) + ([1] * num_classes * X_unlabeled.shape[0])
+      ws = ([labeled_weight] * len(y_labeled)) + ([1] * num_classes * X_unlabeled.shape[0])
+      clf.fit(Xs, ys, ws)
+      clf2.fit(Xs, ys, ws)
+
     else:
-      print "MODE NOT VALID"
+      print "MODE NOT RECOGNIZED"
+      return
 
-  return initial, final
+    semi_supervised_accuracy = get_accuracy(clf, X_test, y_test)
+    print "Semi-supervised accuracy: {:.2%}".format(semi_supervised_accuracy)
 
+  return supervised_accuracy, semi_supervised_accuracy
+
+def get_accuracy(clf, X_test, y_test):
+  return metrics.precision_score(y_test, clf.predict(X_test))
+
+def test_em(dg, labeled_size):
+  trials = min((18000 / 5) / labeled_size, 5)
   
-
-def naive_bayes(train, test, y_train, y_test):
-  vectorizor = CountVectorizer(lowercase=False, stop_words='english', charset_error='ignore')
-  X_train = vectorizor.fit_transform(train)
-  X_test = vectorizor.transform(test)
-  benchmark(MultinomialNB(), X_train, X_test, y_train, y_test)
-
-def benchmark(clf, X_train, X_test, y_train, y_test):
-  #print("Training: ")
-  #print(clf)
-  t0 = time()
-  clf.fit(X_train, y_train)
-  train_time = time() - t0
-  #print("train time: %0.3fs" % train_time)
-
-  return evaluate(clf, X_test, y_test)
-  #print
-
-def evaluate(clf, X_test, y_test):
-  t0 = time()
-  pred = clf.predict(X_test)
-  test_time = time() - t0
-  #print("test time:  %0.3fs" % test_time)
-
-  score = metrics.precision_score(y_test, pred)
-  #print("precision:   %0.3f" % score)
-  return score
-
-def run_em(dg, size, n):
-  #labeled_data, labeled_target = subset(dg.labeled_data, dg.labeled_target, 0, 0.1)
   clf = MultinomialNB(alpha=0.4)
-  #clf = RidgeClassifier(tol=1e-2, solver="lsqr")
-  #clf=Perceptron(n_iter=50)
-  #clf = PassiveAggressiveClassifier(n_iter=50)
-  #clf = KNeighborsClassifier(n_neighbors=10)
-  #clf = NearestCentroid()
+  vectorizor = CountVectorizer(lowercase=True, stop_words='english',
+    max_df=.5, min_df=2, charset_error='ignore')
 
-  #clf= SGDClassifier(alpha=.0001, n_iter=50,
-  #                                     penalty="elasticnet")
-
-  vectorizor = CountVectorizer(lowercase=True,stop_words='english',max_df=.5,min_df=2,charset_error='ignore')
+  labeled = util.subsets(dg.labeled_data, dg.labeled_target,
+                         labeled_size/20, trials, percentage=False)
   
-  labeled = subsets(dg.labeled_data, dg.labeled_target, size, n)
+  accuracies_sup, accuracies_semi = [], []
+  for trial, (labeled_data, labeled_target) in enumerate(labeled):
+    print 60 * "="
+    print "ON TRIAL: " + str(trial + 1) + " OUT OF " + str(trials)
+    print 60 * "="
+    
+    sup, semi = em(clf, vectorizor, dg.unlabeled_data,
+                   labeled_data, dg.validate_data,
+                   labeled_target, dg.validate_target,
+                   mode='soft')
 
-  initials = []
-  finals = []
-  lengths = []
-  for labeled_data, labeled_target in labeled:
-    print "LEN: " + str(len(labeled_data))
-    initial, final = \
-      em(clf, vectorizor, dg.unlabeled_data, 
-         labeled_data, dg.validate_data,
-         labeled_target, dg.validate_target,
-         mode='SFE')
+    accuracies_sup.append(sup)
+    accuracies_semi.append(semi)
 
-    print initial, final
-    initials.append(initial)
-    finals.append(final)
-    lengths.append(len(labeled_data))
-  print 80 * "="
-  print size, avg(lengths), avg(initials), avg(finals)
-  print 80 * "="
-
-def avg(l):
-  return sum(l) / len(l)
+  print 60 * "="
+  avg = lambda l: sum(l) / len(l)
+  print "Average supervised accuracy: {:.2%}".format(avg(accuracies_sup))
+  print "Average Semi-supervised accuracy: {:.2%}".format(avg(accuracies_semi))
+  print 60 * "="
 
 def main():
-  dg = DataGatherer()
-  #naive_bayes(dg.labeled_data[:1000], dg.validate_data,
-  #            dg.labeled_target[:1000], dg.validate_target)
-  
-  
-  labeled_data, labeled_target = subset(dg.labeled_data, dg.labeled_target, 0, 0.2)
-
-  vectorizor = CountVectorizer(lowercase=True,stop_words='english',max_df=.5,min_df=2,charset_error='ignore')
-  run_em(dg, 50 / (18846 * 0.2), 10)
-  run_em(dg, 100 / (18846 * 0.2), 10)
-  run_em(dg, 200 / (18846 * 0.2), 10)
-  run_em(dg, 350 / (18846 * 0.2), 7)
-  run_em(dg, 500 / (18846 * 0.2), 5)
-  run_em(dg, 750 / (18846 * 0.2), 4)
-  run_em(dg, 1000 / (18846 * 0.2), 3)
-  run_em(dg, 1500 / (18846 * 0.2), 2)
-  run_em(dg, 2000 / (18846 * 0.2), 1)
-  run_em(dg, 2500 / (18846 * 0.2), 1)
-  run_em(dg, 3000 / (18846 * 0.2), 1)
-  
-  #initial, final =
-  #  em(clf, vectorizor, dg.unlabeled_data, 
-  #     labeled_data, dg.validate_data,
-  #     labeled_target, dg.validate_target)
+  labeled_sizes = [40, 80, 160, 300, 600, 1000, 2000, 3000]
+  for size in labeled_sizes:
+    test_em(loader.DataGatherer(), size)
 
 if __name__ == '__main__':
   main()

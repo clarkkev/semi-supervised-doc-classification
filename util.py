@@ -2,47 +2,23 @@ import pickle
 from time import time
 from operator import itemgetter
 
-def subsets(data, target, size, n):
-  subsets = []
-  for i in range(n):
-    subsets.append(subset(data, target, i * size, (i + 1) * size))
-  return subsets
+def subsets(data, target, size, n, percentage=True):
+  return [subset(data, target, i * size, (i + 1) * size, percentage)
+          for i in range(n)]
 
-def subset(data, target, start, end, hard=False):
+def subset(data, target, start, end, percentage=True):
   indices_by_class = {}
   for i, y in enumerate(target):
     indices_by_class.setdefault(y, []).append(i)
-  
-  new_data = []
-  new_target = []
-  for y in indices_by_class:
-    n = len(indices_by_class[y])
-    
-    if hard:
-      selected = indices_by_class[y][start:end]
-    else:  
-      selected = indices_by_class[y][int(start * n):int(end * n)]
 
-    for i in selected:
+  new_data, new_target = [], []
+  for y in indices_by_class:
+    n = len(indices_by_class[y]) if percentage else 1
+    for i in indices_by_class[y][int(start * n):int(end * n)]:
       new_data.append(data[i])
       new_target.append(y)
-  
-  #print start, end, len(new_data), len(selected), hard
+
   return new_data, new_target
-
-
-def get_subset(data, start, end, get_classname=itemgetter(0)):
-  features_by_class = {}
-  for item in data:
-    features_by_class.setdefault(get_classname(item), []).append(item)
-  
-  subset = []
-  for classname in features_by_class:
-    n = len(features_by_class[classname])
-    for item in features_by_class[classname][int(start * n):int(end * n)]:
-      subset.append(item)
-  
-  return subset
 
 class LoopLogger():
   def __init__(self, step_size, size=0, print_time=False):
