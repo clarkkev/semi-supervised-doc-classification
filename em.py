@@ -1,5 +1,6 @@
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import CountVectorizer,HashingVectorizer
 from sklearn.naive_bayes import MultinomialNB
+#from sklearn.linear_model import LogisticRegression
 from sklearn import metrics
 
 from scipy import sparse
@@ -8,15 +9,18 @@ import numpy as np
 import loader
 import util
 
-def em(clf, vectorizor, unlabeled, labeled, test, y_labeled, y_test,
+def em(clf, X_unlabeled, X_labeled, X_test, y_labeled, y_test,
        iterations=10, labeled_weight=2, mode="hard"):
   print "Running semi-supervised EM, mode = " + mode
   print "Building word counts..."
-  vectorizor.fit(labeled + unlabeled)
-  X_labeled = vectorizor.transform(labeled)
-  X_unlabeled = vectorizor.transform(unlabeled)
+  
+  #vectorizor.fit(labeled + unlabeled)
+  #X_labeled = vectorizor.transform(labeled)
+  #X_unlabeled = vectorizor.transform(unlabeled)
+  #X_train = sparse.vstack([X_labeled, X_unlabeled])
+  #X_test = vectorizor.transform(test)
+  
   X_train = sparse.vstack([X_labeled, X_unlabeled])
-  X_test = vectorizor.transform(test)
   num_classes = max(max(y_test), max(y_labeled))
 
   if mode == 'SFE':
@@ -36,11 +40,11 @@ def em(clf, vectorizor, unlabeled, labeled, test, y_labeled, y_test,
       class_given_word[c] = (class_given_word[c] + smoothing) \
         / (total_word_counts + (num_classes + 1) * smoothing)
 
-  clf2 = MultinomialNB(alpha=0.0001)
+  #clf2 = MultinomialNB(alpha=0.0001)
 
   print "Initializing with supervised prediction..."
   clf.fit(X_labeled, y_labeled)
-  clf2.fit(X_labeled, y_labeled)
+  #clf2.fit(X_labeled, y_labeled)
   supervised_accuracy = get_accuracy(clf, X_test, y_test)
   print "Supervised accuracy: {:.2%}".format(supervised_accuracy)
 
@@ -48,9 +52,9 @@ def em(clf, vectorizor, unlabeled, labeled, test, y_labeled, y_test,
   for iteration in range(iterations):
     print "On iteration: " + str(iteration + 1) + " out of " + str(iterations)
     if mode == 'hard':
-      ws = ([labeled_weight] * len(labeled)) + ([1] * len(unlabeled))
+      ws = ([labeled_weight] * X_labeled.shape[0]) + ([1] * X_unlabeled.shape[0])
       predictions = clf.predict(X_unlabeled)
-      clf.fit(X_train, np.append(y_labeled, predictions), ws)
+      clf.fit(X_train, np.append(y_labeled, predictions))#, ws)
 
     elif mode == 'soft':
       probas = clf.predict_proba(X_unlabeled)
@@ -110,13 +114,14 @@ def em(clf, vectorizor, unlabeled, labeled, test, y_labeled, y_test,
 def get_accuracy(clf, X_test, y_test):
   return metrics.precision_score(y_test, clf.predict(X_test))
 
-def test_em(dg, labeled_size):
+# for labeled
+# go class to list of 1 x n matrices
+# run get_subset
+# then stack matrices to get labeled matrix
+
+def test_em(dg, labeled_size, clf, vectorizer):
   trials = min((18000 / 5) / labeled_size, 5)
   
-  clf = MultinomialNB(alpha=0.4)
-  vectorizor = CountVectorizer(lowercase=True, stop_words='english',
-    max_df=.5, min_df=2, charset_error='ignore')
-
   labeled = util.subsets(dg.labeled_data, dg.labeled_target,
                          labeled_size/20, trials, percentage=False)
   
@@ -126,11 +131,16 @@ def test_em(dg, labeled_size):
     print "ON TRIAL: " + str(trial + 1) + " OUT OF " + str(trials)
     print 60 * "="
     
-    sup, semi = em(clf, vectorizor, dg.unlabeled_data,
-                   labeled_data, dg.validate_data,
+    X_labeled = vectorizer.transform(labeled_data)
+    #sup, semi = em(clf, vectorizor, dg.unlabeled_data,
+    #               labeled_data, dg.validate_data,
+    #               labeled_target, dg.validate_target,
+    #               mode='hard')
+    sup, semi = em(clf, dg.X_unlabeled,
+                   X_labeled, dg.X_validate,
                    labeled_target, dg.validate_target,
-                   mode='soft')
-
+                   mode='hard')
+    
     accuracies_sup.append(sup)
     accuracies_semi.append(semi)
 
@@ -141,9 +151,25 @@ def test_em(dg, labeled_size):
   print 60 * "="
 
 def main():
+  #clf = LogisticRegression()
+  clf = MultinomialNB(alpha=0.4)
+  vectorizer = CountVectorizer(lowercase=True, stop_words='english',
+    max_df=.5, min_df=2, charset_error='ignore')
+  #vectorizor = HashingVectorizer(lowercase=True, stop_words='english',
+  #  n_features=1000, norm=None, non_negative=True, charset_error='ignore')
+  
+  dg = loader.ReviewGatherer()
+  dg.vectorize(vectorizer)
+
   labeled_sizes = [40, 80, 160, 300, 600, 1000, 2000, 3000]
   for size in labeled_sizes:
-    test_em(loader.DataGatherer(), size)
+    print
+    print "---TESTING FOR " + str(size) + " LABELED EXAMPLES---"
+    test_em(dg, size, clf, vectorizer)
+    print 
+
+  #test_em(dg, 200)
 
 if __name__ == '__main__':
+
   main()

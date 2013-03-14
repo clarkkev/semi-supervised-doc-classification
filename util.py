@@ -1,4 +1,5 @@
 import pickle
+import random
 from time import time
 from operator import itemgetter
 
@@ -19,6 +20,12 @@ def subset(data, target, start, end, percentage=True):
       new_target.append(y)
 
   return new_data, new_target
+
+def shuffle(X, y, examples):
+  p = range(len(y))
+  random.seed(0)
+  random.shuffle(p)
+  return X[p], y[p], [examples[p[i]] for i in range(len(p))]
 
 class LoopLogger():
   def __init__(self, step_size, size=0, print_time=False):
