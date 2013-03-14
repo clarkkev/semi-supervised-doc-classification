@@ -9,6 +9,11 @@ import numpy as np
 import loader
 import util
 
+def add_row(m, r, c, w, priors):
+  m[c] += r * w
+  priors[c] += w
+
+
 def em(clf, X_unlabeled, X_labeled, X_test, y_labeled, y_test,
        iterations=10, labeled_weight=2, mode="hard"):
   print "Running semi-supervised EM, mode = " + mode
@@ -20,7 +25,7 @@ def em(clf, X_unlabeled, X_labeled, X_test, y_labeled, y_test,
   #X_train = sparse.vstack([X_labeled, X_unlabeled])
   #X_test = vectorizor.transform(test)
 
-  X_train = sparse.vstack([X_labeled, X_unlabeled])
+  #X_train = sparse.vstack([X_labeled, X_unlabeled])
   num_classes = max(max(y_test), max(y_labeled))
 
   if mode == 'SFE':
@@ -59,14 +64,18 @@ def em(clf, X_unlabeled, X_labeled, X_test, y_labeled, y_test,
     elif mode == 'soft':
       probas = clf.predict_proba(X_unlabeled)
 
-      Xs = sparse.vstack([X_labeled] + ([X_unlabeled] * num_classes))
-      ys = y_labeled[:]
-      ws = [int(labeled_weight * 10000)] * len(y_labeled)
-      for c in range(num_classes):
-        for i in range(probas.shape[0]):
-          ys.append(c)
-          ws.append(int(10000 * probas[i, c]))
-      clf.fit(Xs, ys, ws)
+      ys = range(num_classes)
+      Xs = np.zeros((num_classes, X_labeled.shape[1]))
+      
+
+      #Xs = sparse.vstack([X_labeled] + ([X_unlabeled] * num_classes))
+      #ys = y_labeled[:]
+      #ws = [int(labeled_weight * 10000)] * len(y_labeled)
+      #for c in range(num_classes):
+      #  for i in range(probas.shape[0]):
+      #    ys.append(c)
+      #    ws.append(int(10000 * probas[i, c]))
+      #clf.fit(Xs, ys, ws)
 
     elif mode == 'SFE':
       num_words = X_train.shape[1]
@@ -127,8 +136,14 @@ def test_em(dg, labeled_size, clf, vectorizer, num_classes, trials):
   #                       labeled_size/num_classes, trials, percentage=False)
 
 
-  labeled = util.subsets(dg.labeled_data, dg.labeled_target,
-                         labeled_size/num_classes, trials, percentage=False)
+  #labeled = util.subsets(dg.labeled_data, dg.labeled_target,
+  #                       labeled_size/num_classes, trials, percentage=False)
+  #labeled = util.subsets_matrix(dg.X_labeled, dg.labeled_target,
+  #                              labeled_size/num_classes, trials, percentage=False)
+  labeled = util.subsets_matrix(dg.X_labeled, dg.labeled_target,
+                                0.3, trials, percentage=True)
+  #labeled = [(dg.X_labeled, dg.labeled_target)]
+  print dg.X_labeled.shape
 
   accuracies_sup, accuracies_semi = [], []
   for trial, (labeled_data, labeled_target) in enumerate(labeled):
@@ -137,12 +152,13 @@ def test_em(dg, labeled_size, clf, vectorizer, num_classes, trials):
     print 60 * "="
 
     #X_labeled = sparse.vstack(labeled_data)
-    X_labeled = vectorizer.transform(labeled_data)
+    #X_labeled = vectorizer.transform(labeled_data)
+    X_labeled = labeled_data
 
     sup, semi = em(clf, dg.X_unlabeled,
                    X_labeled, dg.X_validate,
                    labeled_target, dg.validate_target,
-                   mode='hard')
+                   mode='soft')
 
     accuracies_sup.append(sup)
     accuracies_semi.append(semi)
@@ -161,10 +177,12 @@ def main():
   #vectorizor = HashingVectorizer(lowercase=True, stop_words='english',
   #  n_features=1000, norm=None, non_negative=True, charset_error='ignore')
 
-  dg = loader.ReviewGatherer()
-  dg.vectorize(vectorizer)
+  dg = loader.DMOZGatherer()
+  #dg = loader.NewsgroupGatherer()
+  #dg.vectorize(vectorizer)
+  print dg.X_unlabeled.shape
 
-  labeled_sizes = [300, 80, 160, 300, 600, 1000, 2000, 3000]
+  labeled_sizes = [1000]#300, 80, 160, 300, 600, 1000, 2000, 3000]
   for size in labeled_sizes:
     print
     print "---TESTING FOR " + str(size) + " LABELED EXAMPLES---"

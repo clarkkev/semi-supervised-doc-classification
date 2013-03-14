@@ -2,15 +2,54 @@ import pickle
 import random
 from time import time
 from operator import itemgetter
+from scipy import sparse
 
-def subsets(data, target, size, n, percentage=True):
-  return [subset(data, target, i * size, (i + 1) * size, percentage)
+
+def subset_matrix(data, target, start, end, percentage=True):
+  index_list = range(data.shape[0])
+  index_subset, target_subset = subset(index_list, target, start, end, percentage)
+  #print "getting rows..."
+  rows = [data.getrow(i) for i in sorted(index_subset)]
+  #print "done"
+  return sparse.vstack(rows).tocoo(), target_subset
+
+
+def subsets_matrix(data, target, size, n, percentage=True):
+  #if percentage:
+  #  return variable_subsets_matrix(data, target)
+  return [subset_matrix(data.tocsr(), target, i * size, (i + 1) * size, percentage)
           for i in range(n)]
 
-def subset(data, target, start, end, percentage=True):
+'''def variable_subsets_matrix(data, target, points):
+  index_list = range(data.shape[0])
+  for i, y in enumerate(target):
+    indices_by_class.setdefault(y, []).append(i)
+  
+  subsets_list = []
+  for i in range(len(points - 1)):
+    subsets_list.append(subset(index_list, target, points[i], points[i + 1], True, indices_by_class))
+
+  matrix_subsets_list = []
+  for index_subset, target_subset in subsets_list:
+    rows = [data.getrow(i) for i in index_subset]
+    matrix_subsets_list.append((sparse.vstack(rows), target_subset))
+
+  return matrix_subsets_list'''
+
+
+def subsets(data, target, size, n, percentage=True):
   indices_by_class = {}
   for i, y in enumerate(target):
     indices_by_class.setdefault(y, []).append(i)
+
+  return [subset(data, target, i * size, (i + 1) * size, percentage)
+          for i in range(n), indices_by_class]
+
+def subset(data, target, start, end, percentage=True, indices_by_class=None):
+  if not indices_by_class:
+    indices_by_class = {}
+    for i, y in enumerate(target):
+      indices_by_class.setdefault(y, []).append(i)
 
   new_data, new_target = [], []
   for y in indices_by_class:
