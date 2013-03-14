@@ -9,7 +9,7 @@ class DataGatherer():
 
     validate_size = 1.0 / 2
     labeled_size = 1.0 / 3
-    
+
     self.labeled_data, self.labeled_target = \
       subset(self.train_data, self.train_target, 0, labeled_size)
     self.unlabeled_data, self.unlabeled_target = \
@@ -21,6 +21,8 @@ class DataGatherer():
 
     self.X_labeled = self.X_unlabeled = self.X_validate = self.X_test = None
 
+    self.size = len(self.train_data) + len(self.alltest_data)
+
     print len(self.labeled_data)
     print len(self.unlabeled_data)
     print len(self.validate_data)
@@ -30,8 +32,10 @@ class DataGatherer():
   def vectorize(self, vectorizer):
     print "Vectorizing..."
     self.X_unlabeled = vectorizer.fit_transform(self.unlabeled_data)
-    #self.X_labeled = vectorizer.transform(self.labeled_data)
+    self.X_labeled = vectorizer.transform(self.labeled_data)
     self.X_validate = vectorizer.transform(self.validate_data)
+    self.X_labeled_csr = self.X_labeled.tocsr()
+
     #self.X_test = vectorizer.transform(self.test_data)
 
 class ReviewGatherer(DataGatherer):
@@ -41,12 +45,12 @@ class ReviewGatherer(DataGatherer):
       alldata = pickle.load(f)
     with open('./data/review_targets') as f:
       alltargets = pickle.load(f)
-    
+
     p = range(len(alldata))
     random.seed(0)
     random.shuffle(p)
     shuffle = lambda l: [l[p[i]] for i in range(len(p))]
-    alldata = shuffle(alldata)    
+    alldata = shuffle(alldata)
     alltargets = shuffle(alltargets)
 
     train_size = 0.6
@@ -54,6 +58,8 @@ class ReviewGatherer(DataGatherer):
       subset(alldata, alltargets, 0, 0.6)
     self.alltest_data, self.alltest_target = \
       subset(alldata, alltargets, 0.6, 1)
+
+    self.num_classes = 3
 
     DataGatherer.__init__(self)
 
@@ -67,7 +73,8 @@ class NewsgroupGatherer(DataGatherer):
     self.train_target = data_train.target
     self.alltest_data = data_test.data
     self.alltest_target = data_test.target
-    
+
     self.categories = data_train.target_names
-    
+    self.num_classes = 20
+
     DataGatherer.__init__(self)
