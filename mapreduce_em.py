@@ -1,7 +1,8 @@
 import random
 import time
 import sys
-sys.path.append("..")
+
+import em as emSequential
 import loader
 import util
 
@@ -14,7 +15,7 @@ from collections import defaultdict
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
 
-MAX_ITER = 20
+MAX_ITER = 10
 NUM_TARGETS = 20
 
 # Tell pickle how to handle instance methods
@@ -53,10 +54,10 @@ def vectorize_and_run(classifier, vectorizer, labeled_data,
 def partition_and_run(classifier, labeled_data, targets, unlabeled_data,
                         processes, labeled_weight):
   labeled_data = labeled_data.tocsr()
-  labeled_data = list(matrix_chunks(labeled_data, processes))
+  labeled_data = matrix_chunks(labeled_data, processes)
   unlabeled_data = unlabeled_data.tocsr()
-  unlabeled_data = list(matrix_chunks(unlabeled_data, processes))
-  targets = list(chunks(targets, len(targets) / processes))
+  unlabeled_data = matrix_chunks(unlabeled_data, processes)
+  targets = chunks(targets, len(targets) / processes)
 
   return em(classifier, labeled_data, targets, unlabeled_data, \
               processes, labeled_weight)
@@ -65,10 +66,10 @@ def chunks(l, n):
   for i in xrange(0, len(l), n):
     yield l[i:i+n]
 
-def matrix_chunks(l, n):
-  n = l.shape[0] / n
-  for i in xrange(0, l.shape[0], n):
-    yield l[i:i+n, :]
+def matrix_chunks(matrix, chunks):
+  matrix = matrix.tocsr()
+  step = matrix.shape[0] / chunks
+  return [matrix[i*step:(i+1)*step, :] for i in range(chunks)]
 
 def tocsr(x):
   return x.tocsr()
@@ -94,18 +95,19 @@ def build_classifer_mixed(classifier, labeled_chunks, label_chunks,
   counts = pool.map(get_labeled_counts, zip(labeled_chunks, label_chunks))
   counts += pool.map(get_unlabeled_counts, zip(unlabeled_chunks, 
                                                 projected_label_chunks))
-  weights = [labeled_weights]*NUM_TARGETS*(len(counts)/2) + \
-      [1]*NUM_TARGETS*(len(counts)/2)
-  classifier.fit(np.vstack(counts), np.array(range(NUM_TARGETS) * len(counts)),
-                weights)
+  weights = np.ones(len(counts) * NUM_TARGETS, dtype='int32')
+  weights[:len(counts) * NUM_TARGETS / 2].fill(int(labeled_weights))
+  x = np.array(range(NUM_TARGETS) * len(counts)) 
 
-#  weights = np.ones(len(counts) * NUM_TARGETS)
-#  np.fill(weights, len(counts)/2, 2)
+  classifier.fit(np.vstack(counts), np.array(range(NUM_TARGETS) *\
+                                               len(counts), dtype='int32'),
+                 sample_weight = weights)
+
 
 # Assumes data is partitioned
 def em(classifier, labeled_data, targets, unlabeled_data, \
          processes, labeled_weights):
-  pool = Pool(processes = 2)
+  pool = Pool(processes = processes)
 
   build_classifer_labeled(classifier, labeled_data, targets, pool)
 
@@ -129,6 +131,13 @@ def em(classifier, labeled_data, targets, unlabeled_data, \
                           pool, labeled_weights)
   return classifier
 
+
+def classify(clf, data, processes):
+  pool = Pool(processes)
+  partitioned_data = list(matrix_chunks(data, len(data) / processes))
+  mapped_data = pool.map(clf.predict_proba, partitioned_data)
+  return numpy.vstack(mapped_data)
+
 def preprocess(data, vectorizer, processes):
   pool = Pool(processes)
   partitioned_data = list(chunks(data, len(data) / processes))
@@ -142,21 +151,85 @@ def partition_and_vectorize(data, vectorizer, processes):
   return pool.map(tocsr, mapped_data)
 
 def test_em_times(num_labeled_docs, dg, processes_to_test, vectorizer,
-               clf, labeled_weights, trials):
+               clf, labeled_weight, trails):
+
+  print 60 * "="
+  print "Sequential"
+  print 60 * "="
+  for trail in range(trails):
+    indices = random.sample(xrange(len(dg.labeled_target)),num_labeled_docs)
+    labeled_target = [dg.labeled_target[x] for x in indices]
+    labeled_data = dg.X_labeled.tocsr()[indices, :]
+#    print("Trail: " + str(trail) + " out of " + str(trails))
+
   for processes in processes_to_test:
-    mr_times = []
-    em_times = []
-    offset = 0
-    for i in range(trials):
-      indices = random.sample(xrange(dg.X_labeled_csr.shape[0]),
-                             num_labeled_docs)
+    print 60 * "="
+    print str(processes) + " Processes"
+    print 60 * "="
+    mr_times, em_times = [], []
+    for trail in range(trails):
+      indices = random.sample(xrange(len(dg.labeled_target)),num_labeled_docs)
+      labeled_target = [dg.labeled_target[x] for x in indices]
+      labeled_data = dg.X_labeled.tocsr()[indices, :]
+
+      print("Trail: " + str(trail) + " out of " + str(trails))
+      prev_time = time.time()
+      partition_and_run(clf, labeled_data, labeled_target, dg.X_unlabeled,
+                        processes, labeled_weight)
+      t = time.time() - prev_time
+      mr_times.append(t)
+      print("MR time: " + str(t))
+      print("MR accuracy: " + str(clf.score(dg.X_validate, dg.validate_target)))
+    print("Average time: " + str(avg(mr_times)))
+
+def avg(l):
+  return float(sum(l)/len(l))
+
+def compare_preprocessing(dg, vectorize, trails, processes_to_test):
+  print("")
+  print(10 * "*" + " Comparing Preprocessing Times " + "*" * 10)
+  print(60 * "=")
+  print("Sequential")
+  print(60 * "=")
+
+  averages = []
+  seq_times = []
+  for trail in range(trails):
+    print("Trail: " + str(trail + 1) + " out of " + str(trails))
+    prev_time = time.time()
+    vectorize.transform(dg.unlabeled_data)
+    t = time.time() - prev_time
+    print("Time: " + str(t))
+    seq_times.append(t)
+  print("Average: " + str(avg(seq_times)))
+  averages.append(("Sequential",str(avg(seq_times))))
+
+  for processes in processes_to_test:
+    print 60 * "="
+    print str(processes) + " Processes"
+    print 60 * "="
+    times = []
+    for trail in range(trails):
+      print("Trail: " + str(trail + 1) + " out of " + str(trails))
+      prev_time = time.time()
+      preprocess(dg.unlabeled_data, vectorize, processes)
+      t = time.time() - prev_time
+      print("MR time: " + str(t))
+      times.append(t)
+    av = avg(times)
+    averages.append(("Processes " + str(processes),str(av)))
+    print("Average : " + str(av))
+
+  print("")
+  for name,av in averages:
+    print(name + " : " + str(av))
+  print("Done")
 
 def test_em(labeled_docs, processes, dg, vectorizer, clf,
             labeled_weight, trials):
 
   labeled = util.subsets(dg.labeled_data, dg.labeled_target,
                          labeled_docs/dg.num_classes, trials, percentage=False)
-
   accuracies_sup, accuracies_semi = [], []
   times_sup, times_semi = [], []
   for trial, (labeled_data, labeled_target) in enumerate(labeled):
@@ -173,7 +246,6 @@ def test_em(labeled_docs, processes, dg, vectorizer, clf,
     accuracies_sup.append(clf.score(dg.X_validate, dg.validate_target))
     times_sup.append(time.time() - prevTime)
 
-    # Should really cache the partitions but oh well
     prevTime = time.time()
     partition_and_run(clf, X_labeled, labeled_target, dg.X_unlabeled,
                       processes, labeled_weight)
@@ -186,27 +258,32 @@ def test_em(labeled_docs, processes, dg, vectorizer, clf,
   print "Average Semi-supervised accuracy: {:.2%}".format(avg(accuracies_semi))
   print 60 * "="
 
-def test_times(labeled_docs, processes, dg, vectorizer, clf,
-               labeled_weights, trials):
-  pass
-
-def main():
-  dg = loader.NewsgroupGatherer()
-
+def preprocess_test():
+  dg = loader.ReviewGatherer()
   vectorizer = CountVectorizer(lowercase=True, stop_words='english',
                                max_df=.5, min_df=2, charset_error='ignore')
   vectorizer.fit(dg.unlabeled_data)
-  print("Done fitting vectorizer\n")
-  dg.vectorize(vectorizer)
+  compare_preprocessing(dg, vectorizer, 3, [1,2,3,4])
 
+def em_times_test():
+#  dg = loader.NewsgroupGatherer()
+  dg = loader.ReviewGatherer()
+  vectorizer = CountVectorizer(lowercase=True, stop_words='english',
+                               max_df=.5, min_df=2, charset_error='ignore')
+  vectorizer.fit(dg.unlabeled_data)
+  dg.vectorize(vectorizer)
   nb = MultinomialNB(alpha = 0.4)
   processes = 2
   labeled_weight = 2
-  trials = 1
-  labeled_test_size = 100
+  trails = 1
+  num_labeled_docs = 200
+  test_em_times(num_labeled_docs, dg, [2,4], vectorizer, \
+                nb, labeled_weight, trails)
 
-  test_em(labeled_test_size, processes, dg, vectorizer, nb, labeled_weight, trials)
-
+def main():
+#  preprocess_test()
+  em_times_test()
+  exit()
 
 if __name__ == '__main__':
   main()
