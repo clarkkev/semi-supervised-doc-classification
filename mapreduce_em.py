@@ -273,16 +273,15 @@ def em_times_test():
   vectorizer.fit(dg.unlabeled_data)
   dg.vectorize(vectorizer)
   nb = MultinomialNB(alpha = 0.4)
-  processes = 2
   labeled_weight = 2
-  trails = 1
+  trails = 2
   num_labeled_docs = 200
-  test_em_times(num_labeled_docs, dg, [2,4], vectorizer, \
+  test_em_times(num_labeled_docs, dg, [1,2,3,4], vectorizer, \
                 nb, labeled_weight, trails)
 
 def main():
-#  preprocess_test()
   em_times_test()
+  preprocess_test()
   exit()
 
 if __name__ == '__main__':
