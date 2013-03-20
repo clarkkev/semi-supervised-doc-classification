@@ -4,7 +4,6 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn import metrics
 from sklearn.neighbors import BallTree, KNeighborsClassifier
 
-
 from sklearn.pipeline import Pipeline
 
 from scipy import sparse
@@ -14,6 +13,7 @@ from collections import Counter
 
 from heapq import nsmallest
 
+from time import time
 from operator import itemgetter
 import loader
 import util
@@ -25,9 +25,9 @@ class KNN:
   def __init__(self):
     self.pts = []
     self.k = 3
-    
+
   def add_pt(self, x, y):
-    self.pts.append((x, y))  
+    self.pts.append((x, y))
 
   def classify(self, x):
     closest = self.closest_k(x, self.k)
@@ -53,7 +53,7 @@ def knn(X_unlabeled, X_labeled, X_test, y_labeled, y_test):
   def get_xs(X):
     X = X.toarray()
     return [X[i,:] for i in range(X.shape[0])]
-  
+
   Xs_labeled = get_xs(X_labeled)
   Xs_unlabeled = get_xs(X_unlabeled)
   Xs_test = get_xs(X_test)
@@ -82,11 +82,11 @@ def knn(X_unlabeled, X_labeled, X_test, y_labeled, y_test):
       C.add_pt(x, pred)
   print len(C.pts)
   print len(y_labeled) + len(Xs_unlabeled)'''
-  
+
   print "Training on labeled data..."
   clf = KNeighborsClassifier(n_neighbors=3)
   clf.fit(X_labeled, y_labeled)
-  
+
   supervised_accuracy = get_accuracy(clf, X_test, y_test)
   print "Supervised accuracy: {:.2%}".format(supervised_accuracy)
 
@@ -99,11 +99,11 @@ def knn(X_unlabeled, X_labeled, X_test, y_labeled, y_test):
     instance_probas = probas[i,:]
     best = np.argmax(instance_probas)
     best_score = instance_probas[best]
-      
-    if best_score > 0.9:
+
+    if best_score >= 0.8:
       X_indices.append(i)
       ys.append(best)
-  
+
   ys = y_labeled + ys
   Xs = np.vstack((X_labeled.toarray(), X_unlabeled[X_indices,:].toarray()))
 
@@ -122,29 +122,22 @@ def knn(X_unlabeled, X_labeled, X_test, y_labeled, y_test):
 
   print "Training semi-supervised"
   clf.fit(Xs, ys)
-  
+
   semi_supervised_accuracy = get_accuracy(clf, X_test.toarray(), y_test)
   print "Semi-supervised accuracy: {:.2%}".format(semi_supervised_accuracy)
-  
+
   return supervised_accuracy, semi_supervised_accuracy
-  #print "Condensing..."
-  #C2 = KNN()
-  #for x, y in C.pts:
-  #  if not C2.pts:
-  #    C2.add_pt(x, y)
-  #  else:
-  #    score, pred = C2.classify(x)
-  #    if pred != y:
-  #      C2.add_pt(x, y)
-  #print len(C2.pts)
+  '''print "Condensing..."
+  C2 = KNN()
+  for x, y in C.pts:
+    if not C2.pts:
+      C2.add_pt(x, y)
+    else:
+      score, pred = C2.classify(x)
+      if pred != y:
+        C2.add_pt(x, y)
+  print len(C2.pts)'''
 
-  #C3 = KNN()
-  #for x, y in zip(Xs_labeled, y_labeled):
-  #  C3.add_pt(x, y)
-
-  #print get_accuracy(C.get_clf(), X_test, y_test)
-  #print get_accuracy(C2.get_clf(), X_test, y_test)
-  #print get_accuracy(C3.get_clf(), X_test, y_test)
 
 
 def em(clf, X_unlabeled, X_labeled, X_test, y_labeled, y_test,
@@ -277,10 +270,51 @@ def test_method(dg, labeled_size, trials, run_fun):
   print "Average Semi-supervised accuracy: {:.2%}".format(avg(accuracies_semi))
   print 60 * "="
 
+  return avg(accuracies_sup), avg(accuracies_semi)
+
 def main():
   clf = MultinomialNB(alpha=0.4)
   #vectorizer = CountVectorizer(lowercase=True, stop_words='english',
   #  max_df=.5, min_df=2, charset_error='ignore')
+  
+  '''times = []
+  accuracies = []
+  n_features_list = [1000, 2000, 5000, 10000, 20000]:
+  for n_features in n_features_list:
+    print "---TESTING FOR " + str(n_features) + " Dimensions---"
+    
+    hasher = HashingVectorizer(lowercase=True, stop_words='english',
+      n_features=n_features, norm=None, binary=False, non_negative=True, charset_error='ignore')
+    vectorizer = Pipeline((('hasher', hasher),
+                           ('tf_idf', TfidfTransformer())))
+  
+    dg = loader.NewsgroupGatherer()
+    
+    start_time = time()  
+    dg.vectorize(vectorizer)
+    vectorize_time = time()
+    accuracies.append( \
+      test_method(dg, 200, 3, knn))
+    end_time = time()
+    print "TIMES: " + str((start_time, vectorize_time, end_time))
+    times.append((start_time, vectorize_time, end_time))
+
+  print
+  print
+  print 60 * "="
+  print 60 * "*"
+  print 60 * "-"
+  for i, (sup, semi) in enumerate(accuracies):
+    print "  LABELED AMOUNT: {0}\n  SUPERVISED ACCURACY: {1:.2%}\n  SEMI-SUPERVISED ACCURACY: {2:.2%}".format(n_features_list[i], sup, semi)
+    print 60 * "-"
+  
+  print times
+  print 60 * "*"
+  print 60 * "="'''
+
+    
+  
+  
   hasher = HashingVectorizer(lowercase=True, stop_words='english',
     n_features=10000, norm=None, binary=False, non_negative=True, charset_error='ignore')
   vectorizer = Pipeline((('hasher', hasher),
@@ -290,13 +324,28 @@ def main():
   dg = loader.NewsgroupGatherer()
   dg.vectorize(vectorizer)
 
-  labeled_sizes = [80, 160, 300, 600, 1000, 2000, 3000]
-  for size in labeled_sizes:
+  accuracies = []
+  labeled_sizes = [60, 100, 200, 360, 500, 1000, 2000, 3000]
+  trials = [5, 5, 4, 3, 3, 2, 1, 1]
+  for i, size in enumerate(labeled_sizes):
     print
     print "---TESTING FOR " + str(size) + " LABELED EXAMPLES---"
-    #test_method(dg, size, min(int(dg.size * 0.2 * 0.9 / size), 10), em_runner(clf, 'hard'))
-    test_method(dg, size, min(int(dg.size * 0.2 * 0.9 / size), 5), knn)
+    #accuracies.append( \
+    #  test_method(dg, size, min(int(dg.size * 0.2 * 0.9 / size), 10), em_runner(clf, 'hard')))
+    accuracies.append( \
+      test_method(dg, size, trials[i], knn))
     print
+
+  print
+  print
+  print 60 * "="
+  print 60 * "*"
+  print 60 * "-"
+  for i, (sup, semi) in enumerate(accuracies):
+    print "  LABELED AMOUNT: {0}\n  SUPERVISED ACCURACY: {1:.2%}\n  SEMI-SUPERVISED ACCURACY: {2:.2%}".format(labeled_sizes[i], sup, semi)
+    print 60 * "-"
+  print 60 * "*"
+  print 60 * "="
 
 if __name__ == '__main__':
   main()
