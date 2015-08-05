@@ -1,1 +1,1 @@
-This project is wicked cool
+This project explores techniques for semi-supervised document classification. It was done as a class project for the University of Washington's Machine Learning for Big Data course ([CSE 599](http://courses.cs.washington.edu/courses/cse599c1/13wi/)).
